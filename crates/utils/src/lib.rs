@@ -14,6 +14,13 @@ fn js_value_to_object<'a>(
     value.downcast(cx).or_throw(cx)
 }
 
+fn js_value_to_date<'a>(
+    cx: &mut impl Context<'a>,
+    value: Handle<'a, JsValue>,
+) -> JsResult<'a, neon::types::JsDate> {
+    value.downcast(cx).or_throw(cx)
+}
+
 fn js_value_to_string<'a>(
     cx: &mut impl Context<'a>,
     value: Handle<'a, JsValue>,
@@ -24,10 +31,38 @@ fn js_value_to_string<'a>(
 fn is_object_empty<'a>(
     cx: &mut impl Context<'a>,
     obj: Handle<'a, JsObject>,
-) -> JsResult<'a, JsBoolean> {
-    let keys: Handle<JsArray> = get_object_keys(cx, obj)?;
-    let is_obj_empty: bool = keys.is_empty(cx);
-    Ok(cx.boolean(is_obj_empty))
+) -> bool {
+    let keys: Handle<JsArray> = get_object_keys(cx, obj).unwrap();
+    return keys.is_empty(cx);
+}
+
+fn is_object_and_empty<'a>(
+    cx: &mut impl Context<'a>,
+    val: Handle<'a, JsValue>,
+) -> bool {
+    if is_object(cx, val) == false {
+        return false;
+    }
+
+    let obj = js_value_to_object(cx, val).unwrap();
+
+    let is_empty = is_object_empty(cx, obj);
+
+    return is_empty;
+}
+
+fn is_object<'a>(
+    cx: &mut impl Context<'a>,
+    obj: Handle<'a, JsValue>,
+) -> bool {
+    return obj.is_a::<JsObject, _>(cx);
+}
+
+fn is_date<'a>(
+    cx: &mut impl Context<'a>,
+    obj: Handle<'a, JsValue>,
+) -> bool {
+    return obj.is_a::<neon::types::JsDate, _>(cx);
 }
 
 fn added_diff<'a>(
@@ -39,11 +74,11 @@ fn added_diff<'a>(
         return Ok(cx.empty_object());
     }
 
-    if rhs.is_a::<JsObject, _>(cx) == false {
+    if is_object(cx, rhs) == false {
         return Ok(cx.empty_object());
     }
 
-    if lhs.is_a::<JsObject, _>(cx) == false {
+    if is_object(cx, lhs) == false {
         return Ok(cx.empty_object());
     }
 
@@ -61,7 +96,6 @@ fn added_diff<'a>(
     for (_i, r_key) in r_keys_vec.iter().enumerate() {
         let mut l_has_r_key: bool = false;
         let key_as_string = js_value_to_string(cx, *r_key)?;
-        let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
 
         for (_i, l_key) in l_keys_vec.iter().enumerate() {
             let l_key_as_string = js_value_to_string(cx, *l_key)?;
@@ -70,17 +104,13 @@ fn added_diff<'a>(
             }
         }
 
+        let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
         if l_has_r_key {
             let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
             let diff: Handle<JsObject> = added_diff(cx, l_val, r_val)?;
 
-            if diff.is_a::<JsObject, _>(cx) == true {
-                let is_diff_empty: Handle<JsBoolean> = is_object_empty(cx, diff)?;
-                let false_check = cx.boolean(false);
-                if is_diff_empty.strict_equals(cx, false_check) {
-                    acc.set(cx, key_as_string, diff)?;
-                }
-            } else {
+            let is_diff_empty = is_object_empty(cx, diff);
+            if is_diff_empty == false {
                 acc.set(cx, key_as_string, diff)?;
             }
         } else {
@@ -100,11 +130,11 @@ fn deleted_diff<'a>(
         return Ok(cx.empty_object());
     }
 
-    if rhs.is_a::<JsObject, _>(cx) == false {
+    if is_object(cx, rhs) == false {
         return Ok(cx.empty_object());
     }
 
-    if lhs.is_a::<JsObject, _>(cx) == false {
+    if is_object(cx, lhs) == false {
         return Ok(cx.empty_object());
     }
 
@@ -122,7 +152,6 @@ fn deleted_diff<'a>(
     for (_i, l_key) in l_keys_vec.iter().enumerate() {
         let mut r_has_l_key: bool = false;
         let key_as_string = js_value_to_string(cx, *l_key)?;
-        let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
 
         for (_i, r_key) in r_keys_vec.iter().enumerate() {
             let r_key_as_string = js_value_to_string(cx, *r_key)?;
@@ -131,17 +160,13 @@ fn deleted_diff<'a>(
             }
         }
 
+        let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
         if r_has_l_key {
             let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
             let diff: Handle<JsObject> = deleted_diff(cx, l_val, r_val)?;
 
-            if diff.is_a::<JsObject, _>(cx) == true {
-                let is_diff_empty: Handle<JsBoolean> = is_object_empty(cx, diff)?;
-                let false_check = cx.boolean(false);
-                if is_diff_empty.strict_equals(cx, false_check) {
-                    acc.set(cx, key_as_string, diff)?;
-                }
-            } else {
+            let is_diff_empty = is_object_empty(cx, diff);
+            if is_diff_empty == false {
                 acc.set(cx, key_as_string, diff)?;
             }
         } else {
@@ -151,6 +176,77 @@ fn deleted_diff<'a>(
     }
 
     Ok(acc)
+}
+
+fn updated_diff<'a>(
+    cx: &mut impl Context<'a>,
+    lhs: Handle<'a, JsValue>,
+    rhs: Handle<'a, JsValue>,
+) -> JsResult<'a, JsValue> {
+    if rhs.strict_equals(cx, lhs) {
+        return Ok(cx.empty_object().upcast());
+    }
+
+    if is_date(cx, lhs) && is_date(cx, rhs) {
+        let lhs_as_date = js_value_to_date(cx, lhs)?;
+        let rhs_as_date = js_value_to_date(cx, rhs)?;
+        if lhs_as_date.value(cx) == rhs_as_date.value(cx) {
+            return Ok(cx.empty_object().upcast());
+        }
+    }
+
+    if is_date(cx, lhs) || is_date(cx, rhs) {
+        return Ok(rhs);
+    }
+
+    if is_object(cx, lhs) == false || is_object(cx, rhs) == false {
+        return Ok(rhs);
+    }
+
+    let l: Handle<JsObject> = js_value_to_object(cx, lhs)?;
+    let r: Handle<JsObject> = js_value_to_object(cx, rhs)?;
+
+    let l_keys: Handle<JsArray> = get_object_keys(cx, l)?;
+    let r_keys: Handle<JsArray> = get_object_keys(cx, r)?;
+
+    let l_keys_vec: Vec<Handle<JsValue>> = l_keys.to_vec(cx)?;
+    let r_keys_vec: Vec<Handle<JsValue>> = r_keys.to_vec(cx)?;
+
+    let acc = cx.empty_object();
+
+    for (_i, r_key) in r_keys_vec.iter().enumerate() {
+        let mut has_key: bool = false;
+        let key_as_string = js_value_to_string(cx, *r_key)?;
+
+        for (_i, l_key) in l_keys_vec.iter().enumerate() {
+            let l_key_as_string = js_value_to_string(cx, *l_key)?;
+            if l_key_as_string.strict_equals(cx, key_as_string) {
+                has_key = true;
+            }
+        }
+
+        if has_key {
+            let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
+            let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
+
+            let diff: Handle<JsValue> = updated_diff(cx, l_val, r_val)?;
+
+            let diff_is_object_and_empty = is_object_and_empty(cx, diff);
+            let is_l_val_empty_object = is_object_and_empty(cx, l_val);
+            let is_r_val_empty_object = is_object_and_empty(cx, r_val);
+
+            if diff_is_object_and_empty && is_date(cx, diff) == false && (is_l_val_empty_object == true || is_r_val_empty_object == false) {
+                //
+            } else {
+                let length_as_string = cx.string("length");
+                if key_as_string.strict_equals(cx, length_as_string) == false {
+                    acc.set(cx, key_as_string, diff)?;
+                }
+            }
+        }
+    }
+
+    Ok(acc.upcast())
 }
 
 fn bind_added_diff(mut cx: FunctionContext) -> JsResult<JsObject> {
@@ -167,6 +263,15 @@ fn bind_deleted_diff(mut cx: FunctionContext) -> JsResult<JsObject> {
     deleted_diff(&mut cx, lhs, rhs)
 }
 
+fn bind_updated_diff(mut cx: FunctionContext) -> JsResult<JsValue> {
+    let lhs: Handle<JsValue> = cx.argument::<JsValue>(0)?;
+    let rhs: Handle<JsValue> = cx.argument::<JsValue>(1)?;
+
+    let diff = updated_diff(&mut cx, lhs, rhs)?;
+
+    return Ok(diff);
+}
+
 fn bind_is_empty(
     mut cx: FunctionContext
 ) -> JsResult<JsBoolean> {
@@ -181,5 +286,6 @@ fn main(mut cx: ModuleContext) -> NeonResult<()> {
     cx.export_function("isEmpty", bind_is_empty)?;
     cx.export_function("addedDiff", bind_added_diff)?;
     cx.export_function("deleted", bind_deleted_diff)?;
+    cx.export_function("updated", bind_updated_diff)?;
     Ok(())
 }
