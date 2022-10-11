@@ -60,35 +60,32 @@ fn added_diff<'a>(
 
     for (_i, r_key) in r_keys_vec.iter().enumerate() {
         let mut l_has_r_key: bool = false;
-        let r_key_as_string = js_value_to_string(cx, *r_key)?;
-        let r_val: Handle<JsValue> = r.get(cx, r_key_as_string)?;
+        let key_as_string = js_value_to_string(cx, *r_key)?;
+        let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
 
         for (_i, l_key) in l_keys_vec.iter().enumerate() {
             let l_key_as_string = js_value_to_string(cx, *l_key)?;
-            if l_key_as_string.strict_equals(cx, r_key_as_string) {
+            if l_key_as_string.strict_equals(cx, key_as_string) {
                 l_has_r_key = true;
             }
         }
 
         if l_has_r_key {
-            let l_val: Handle<JsValue> = l.get(cx, r_key_as_string)?;
+            let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
             let diff: Handle<JsObject> = added_diff(cx, l_val, r_val)?;
 
             if diff.is_a::<JsObject, _>(cx) == true {
                 let is_diff_empty: Handle<JsBoolean> = is_object_empty(cx, diff)?;
-                let true_check = cx.boolean(true);
-                if is_diff_empty.strict_equals(cx, true_check) {
-                    return Ok(acc);
+                let false_check = cx.boolean(false);
+                if is_diff_empty.strict_equals(cx, false_check) {
+                    acc.set(cx, key_as_string, diff)?;
                 }
-
-                acc.set(cx, r_key_as_string, diff)?;
-                return Ok(acc);
+            } else {
+                acc.set(cx, key_as_string, diff)?;
             }
-
-
+        } else {
+            acc.set(cx, key_as_string, r_val)?;
         }
-
-        acc.set(cx, r_key_as_string, r_val)?;
     }
 
     Ok(acc)
