@@ -1,5 +1,4 @@
 import addedDiff from '../src/added';
-import rustAddedDiff from '../rust_src/added';
 import { benchmarkSuite } from "jest-bench";
 
 benchmarkSuite('.addedDiff', {
@@ -36,22 +35,5 @@ benchmarkSuite('.addedDiff', {
         expect(addedDiff(type, value)).toEqual({});
       })
     },
-
-    ['rust_equal']: () => {
-
-      [
-        ['int', 1],
-        ['string', 'a'],
-        ['boolean', true],
-        ['null', null],
-        ['undefined', undefined],
-        ['object', { a: 1 }],
-        ['array', [1]],
-        ['function', () => ({})],
-        ['date', new Date()],
-      ].forEach(([type, value]) => {
-        expect(rustAddedDiff(type, value)).toEqual({});
-      })
-    }
 
 });
