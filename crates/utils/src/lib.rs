@@ -51,6 +51,13 @@ fn is_object_and_empty<'a>(
     return is_empty;
 }
 
+fn is_undefined<'a>(
+    cx: &mut impl Context<'a>,
+    obj: Handle<'a, JsValue>,
+) -> bool {
+    return obj.is_a::<JsUndefined, _>(cx);
+}
+
 fn is_object<'a>(
     cx: &mut impl Context<'a>,
     obj: Handle<'a, JsValue>,
@@ -69,56 +76,43 @@ fn added_diff<'a>(
     cx: &mut impl Context<'a>,
     lhs: Handle<'a, JsValue>,
     rhs: Handle<'a, JsValue>,
-) -> JsResult<'a, JsObject> {
-    if rhs.strict_equals(cx, lhs) {
-        return Ok(cx.empty_object());
-    }
-
-    if is_object(cx, rhs) == false {
-        return Ok(cx.empty_object());
-    }
-
-    if is_object(cx, lhs) == false {
-        return Ok(cx.empty_object());
-    }
-
-    let r: Handle<JsObject> = js_value_to_object(cx, rhs)?;
-    let l: Handle<JsObject> = js_value_to_object(cx, lhs)?;
-
-    let r_keys: Handle<JsArray> = get_object_keys(cx, r)?;
-    let l_keys: Handle<JsArray> = get_object_keys(cx, l)?;
-
-    let r_keys_vec: Vec<Handle<JsValue>> = r_keys.to_vec(cx)?;
-    let l_keys_vec: Vec<Handle<JsValue>> = l_keys.to_vec(cx)?;
+) -> JsResult<'a, JsValue> {
 
     let acc = cx.empty_object();
 
-    for (_i, r_key) in r_keys_vec.iter().enumerate() {
-        let mut l_has_r_key: bool = false;
-        let key_as_string = js_value_to_string(cx, *r_key)?;
+    if rhs.strict_equals(cx, lhs) == false
+        && is_object(cx, rhs) == true
+        && is_object(cx, lhs) == true {
 
-        for (_i, l_key) in l_keys_vec.iter().enumerate() {
-            let l_key_as_string = js_value_to_string(cx, *l_key)?;
-            if l_key_as_string.strict_equals(cx, key_as_string) {
-                l_has_r_key = true;
+        let r: Handle<JsObject> = js_value_to_object(cx, rhs)?;
+        let l: Handle<JsObject> = js_value_to_object(cx, lhs)?;
+
+        let r_keys: Handle<JsArray> = get_object_keys(cx, r)?;
+        let r_keys_vec: Vec<Handle<JsValue>> = r_keys.to_vec(cx)?;
+
+        for r_key in r_keys_vec.iter() {
+
+            let key_as_string = js_value_to_string(cx, *r_key)?;
+
+            let r_val: Handle<JsValue> = r.get_value(cx, key_as_string)?;
+            let l_val: Handle<JsValue> = l.get_value(cx, key_as_string)?;
+
+            if is_undefined(cx, l_val) == false {
+
+                let diff: Handle<JsValue> = added_diff(cx, l_val, r_val)?;
+
+                if is_object_and_empty(cx, diff) == false {
+                    acc.set(cx, key_as_string, diff)?;
+                }
+
+            } else {
+                acc.set(cx, key_as_string, r_val)?;
             }
         }
 
-        let r_val: Handle<JsValue> = r.get(cx, key_as_string)?;
-        if l_has_r_key {
-            let l_val: Handle<JsValue> = l.get(cx, key_as_string)?;
-            let diff: Handle<JsObject> = added_diff(cx, l_val, r_val)?;
-
-            let is_diff_empty = is_object_empty(cx, diff);
-            if is_diff_empty == false {
-                acc.set(cx, key_as_string, diff)?;
-            }
-        } else {
-            acc.set(cx, key_as_string, r_val)?;
-        }
     }
 
-    Ok(acc)
+    Ok(acc.upcast())
 }
 
 fn deleted_diff<'a>(
@@ -249,7 +243,7 @@ fn updated_diff<'a>(
     Ok(acc.upcast())
 }
 
-fn bind_added_diff(mut cx: FunctionContext) -> JsResult<JsObject> {
+fn bind_added_diff(mut cx: FunctionContext) -> JsResult<JsValue> {
     let lhs: Handle<JsValue> = cx.argument::<JsValue>(0)?;
     let rhs: Handle<JsValue> = cx.argument::<JsValue>(1)?;
 

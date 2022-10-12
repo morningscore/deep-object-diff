@@ -38,7 +38,7 @@ function randomValue () {
   return value
 }
 
-const depthEntryCounts = [10000, 20, 10, 5]
+const depthEntryCounts = [100, 20, 10, 5]
 const maxDepth = depthEntryCounts.length
 
 function generateEntry(depth) {
